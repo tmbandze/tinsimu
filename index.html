@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tinsimu: Hinários do Nazareno</title>
+<meta name="description" content="Abrir este hino na aplicação Tinsimu: Hinários do Nazareno.">
+<meta property="og:title" content="Tinsimu: Hinários do Nazareno">
+<meta property="og:description" content="Toque para abrir na aplicação. Se ainda não a tem, instale-a grátis na Play Store.">
+<meta name="theme-color" content="#1F3A8A">
+<style>
+  :root { --bg:#F4F6FB; --card:#FFFFFF; --ink:#13203F; --muted:#5A6478; --brand:#1F3A8A; --brand-ink:#FFFFFF; --line:#E1E6F0; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0E1424; --card:#18213A; --ink:#E9EDF7; --muted:#A3ACBF; --brand:#5B7FE0; --brand-ink:#0E1424; --line:#26314D; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+         background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; padding:16px; }
+  main { width:100%; max-width:420px; background:var(--card); border:1px solid var(--line); border-radius:20px; padding:28px 24px; text-align:center; }
+  .brand { font-size:13px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin:0 0 18px; }
+  .num { display:inline-block; background:var(--brand); color:var(--brand-ink); font-weight:700; border-radius:999px; padding:4px 14px; font-size:14px; }
+  h1 { font-size:24px; line-height:1.25; margin:14px 0 4px; }
+  .sub { color:var(--muted); margin:0 0 6px; }
+  ol { text-align:left; margin:14px 0 0; padding-left:22px; color:var(--ink); }
+  ol li { margin:2px 0; }
+  .btn { display:block; width:100%; margin-top:22px; padding:14px 16px; border-radius:14px; font-weight:700; font-size:16px;
+         text-decoration:none; background:var(--brand); color:var(--brand-ink); border:0; }
+  .btn.alt { background:transparent; color:var(--brand); border:1.5px solid var(--brand); margin-top:10px; }
+  .note { color:var(--muted); font-size:13px; margin:16px 0 0; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <p class="brand">Tinsimu · Hinários do Nazareno</p>
+
+  <div id="hymn" hidden>
+    <span class="num" id="hymn-num"></span>
+    <h1 id="hymn-title">A carregar…</h1>
+    <p class="sub" id="hymn-sub"></p>
+  </div>
+
+  <div id="list" hidden>
+    <span class="num">Lista de culto</span>
+    <h1 id="list-title"></h1>
+    <p class="sub" id="list-date"></p>
+    <ol id="list-items"></ol>
+  </div>
+
+  <div id="none" hidden>
+    <h1>Hinos da Igreja do Nazareno</h1>
+    <p class="sub">Tinsimu Ta Kutwanana, Louvor e Adoração, Izihlabelelo Zokudumisa, Melodi ya Tumelo e Simbani Mulungu — com letras, pautas e áudio.</p>
+  </div>
+
+  <a class="btn" id="open" href="#" hidden>Abrir na aplicação</a>
+  <a class="btn alt" id="store" href="https://play.google.com/store/apps/details?id=mz.nazareno.tinsimu">Instalar na Play Store</a>
+  <p class="note" id="note-android" hidden>Se a aplicação não abrir, é porque ainda não está instalada: o botão leva-o à Play Store.</p>
+  <p class="note" id="note-other" hidden>Disponível para Android. A versão para iPhone vem em breve.</p>
+</main>
+
+<script>
+(function () {
+  var PKG = 'mz.nazareno.tinsimu';
+  var STORE = 'https://play.google.com/store/apps/details?id=' + PKG;
+  var SUPABASE = 'https://lhbmdikygsumokzriycv.supabase.co/rest/v1';
+  var KEY = 'sb_publishable_0XbeNeb4GOjSdrGk6TqKyw_-RoHSMuQ';
+  var HYMNALS = { NTW:'Tinsimu Ta Kutwanana', LA:'Louvor e Adoração', ZOKU:'Izihlabelelo Zokudumisa', MYT:'Melodi ya Tumelo', SM:'Simbani Mulungu', CL:'Composições Locais' };
+
+  var q = new URLSearchParams(location.search);
+  var isAndroid = /android/i.test(navigator.userAgent);
+  var deepPath = null;   // ex.: hino/NTW/45  ou  culto/?t=...&h=...
+
+  function show(id) { document.getElementById(id).hidden = false; }
+  function text(id, v) { document.getElementById(id).textContent = v; }
+  function parseRef(s) {
+    var m = /^([A-Za-z]+)[-:](\d+)$/.exec((s || '').trim());
+    if (!m || !HYMNALS[m[1].toUpperCase()]) return null;
+    return { code: m[1].toUpperCase(), number: parseInt(m[2], 10) };
+  }
+  function fetchTitles(refs) {
+    // Só para mostrar o título; se falhar, a página continua a funcionar.
+    var codes = {}; refs.forEach(function (r) { (codes[r.code] = codes[r.code] || []).push(r.number); });
+    var jobs = Object.keys(codes).map(function (c) {
+      var url = SUPABASE + '/hymns?select=hymnal_code,number,title_xitsonga,title_portuguese&hymnal_code=eq.' + c + '&number=in.(' + codes[c].join(',') + ')';
+      return fetch(url, { headers: { apikey: KEY, Authorization: 'Bearer ' + KEY } }).then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; });
+    });
+    return Promise.all(jobs).then(function (parts) {
+      var map = {}; [].concat.apply([], parts).forEach(function (h) { map[h.hymnal_code + ':' + h.number] = h; }); return map;
+    });
+  }
+
+  var one = parseRef(q.get('h'));
+  if (q.get('c') === null && one) {
+    deepPath = 'hino/' + one.code + '/' + one.number;
+    show('hymn'); text('hymn-num', one.code + ' ' + one.number);
+    document.title = one.code + ' ' + one.number + ' · Tinsimu';
+    fetchTitles([one]).then(function (map) {
+      var h = map[one.code + ':' + one.number];
+      text('hymn-title', h ? h.title_xitsonga : HYMNALS[one.code]);
+      if (h && h.title_portuguese && h.title_portuguese !== h.title_xitsonga) text('hymn-sub', h.title_portuguese);
+      else text('hymn-sub', HYMNALS[one.code]);
+    });
+  } else if (q.get('c') !== null && q.get('h')) {
+    var refs = q.get('h').split(',').map(parseRef).filter(Boolean).slice(0, 60);
+    var t = (q.get('t') || '').trim() || 'Lista de culto';
+    var d = q.get('d');
+    var qs = new URLSearchParams(); qs.set('t', t); if (d) qs.set('d', d); qs.set('h', refs.map(function (r) { return r.code + ':' + r.number; }).join(','));
+    deepPath = 'culto/?' + qs.toString();
+    show('list'); text('list-title', t);
+    if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) { var p = d.split('-'); text('list-date', p[2] + '/' + p[1] + '/' + p[0]); }
+    var ol = document.getElementById('list-items');
+    refs.forEach(function (r) { var li = document.createElement('li'); li.id = 'li-' + r.code + '-' + r.number; li.textContent = r.code + ' ' + r.number; ol.appendChild(li); });
+    fetchTitles(refs).then(function (map) {
+      refs.forEach(function (r) { var h = map[r.code + ':' + r.number]; if (h) document.getElementById('li-' + r.code + '-' + r.number).textContent = r.code + ' ' + r.number + ' — ' + h.title_xitsonga; });
+    });
+  } else {
+    show('none');
+  }
+
+  if (isAndroid) {
+    show('note-android');
+    if (deepPath) {
+      // Abre a app se estiver instalada; se não estiver, o próprio Android
+      // segue para a Play Store (S.browser_fallback_url).
+      var intent = 'intent://' + deepPath + '#Intent;scheme=tinsimu;package=' + PKG +
+                   ';S.browser_fallback_url=' + encodeURIComponent(STORE) + ';end';
+      var open = document.getElementById('open');
+      open.href = intent; open.hidden = false;
+      setTimeout(function () { location.href = intent; }, 300);
+    }
+  } else {
+    show('note-other');
+  }
+})();
+</script>
+</body>
+</html>
